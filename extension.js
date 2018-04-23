@@ -3,6 +3,14 @@
 const vscode = require('vscode');
 const axios = require('axios');
 
+function retryFailedRequest (err) {
+	if (err.status != 200 && err.config && !err.config.__isRetryRequest) {
+	  err.config.__isRetryRequest = true;
+	  return axios(err.config);
+	}
+	throw err;
+  }
+
 // this method is called when your extension is activated
 // your extension is activated the very first time the command is executed
 function activate(context) {
@@ -10,6 +18,9 @@ function activate(context) {
     // Decorators
 	const upToDateDecorationType = vscode.window.createTextEditorDecorationType({
 		backgroundColor: 'rgba(100,255,0,0.1)'
+	});
+	const warningDecorationType = vscode.window.createTextEditorDecorationType({
+		backgroundColor: 'rgba(255,130,0,0.1)'
 	});
 	const outOfDateDecorationType = vscode.window.createTextEditorDecorationType({
 		backgroundColor: 'rgba(255,0,0,0.1)'
@@ -42,30 +53,37 @@ function activate(context) {
 		if (!activeEditor) {
 			return;
 		}
-		const regEx = /gem ["']([a-zA-z\d]+)["'], ["']([~><=\d.]+)["'].*/gm;
+		const regEx = /gem ["']([a-zA-z-_\d]+)["'], ["']([~><=\d.]+)["'].*/gm;
         const text = activeEditor.document.getText();
 		const upToDateLines = [];
 		const outOfDateLines = [];
+		const warningLines = [];
         let match;
-        let promises = [];
-        console.log('------------------------------------------------------------------------')
+		let promises = [];
 		while (match = regEx.exec(text)) {
             let i = match 
             promises.push(
-                axios.get(`https://rubygems.org/api/v1/gems/${match[1]}.json`)
+                axios.get(`https://rubygems.org/api/v1/gems/${i[1]}.json`)
                 .then(res => {
                     const startPos = activeEditor.document.positionAt(i.index);
-                    const endPos = activeEditor.document.positionAt(i.index + i[0].length);
-                    const decoration = { range: new vscode.Range(startPos, endPos), hoverMessage: `Up to date` };
-                    upToDateLines.push(decoration);
-                })
-                .catch(err => {})
+					const endPos = activeEditor.document.positionAt(i.index + i[0].length);
+					if (res.data.version == i[2]) {
+                    	const decoration = { range: new vscode.Range(startPos, endPos), hoverMessage: `Up to date` };
+                    	upToDateLines.push(decoration);
+					} else {
+						const decoration = { range: new vscode.Range(startPos, endPos), hoverMessage: `Out of date` };
+						outOfDateLines.push(decoration);
+					}
+				})
+                .catch(err => { console.log(1) })
             )
-        }
-        Promise.all(promises).then(() => {
-		    activeEditor.setDecorations(upToDateDecorationType, upToDateLines);
-		    activeEditor.setDecorations(outOfDateDecorationType, outOfDateLines);
-        })
+		}
+  		axios.interceptors.response.use(undefined, retryFailedRequest);
+		Promise.all(promises).then(() => {
+			activeEditor.setDecorations(upToDateDecorationType, upToDateLines);
+			activeEditor.setDecorations(outOfDateDecorationType, outOfDateLines);
+			activeEditor.setDecorations(warningDecorationType, warningLines);
+		})
     }
     
 }
