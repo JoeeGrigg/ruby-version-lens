@@ -25,5 +25,8 @@
         "eslint": "^4.11.0",
         "typescript": "^2.6.1",
         "vscode": "^1.1.6"
+    },
+    "dependencies": {
+        "bluebird": "^3.5.1"
     }
 }
